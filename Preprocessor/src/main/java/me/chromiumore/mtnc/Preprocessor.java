@@ -50,6 +50,13 @@ public static void main(String[] args) {
             return "Обнаружен незакрытый многострочный комментарий!";
         }
 
+        Pattern invalidCharactersPattern = Pattern.compile("\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F");
+        Matcher charactersMatcher = invalidCharactersPattern.matcher(cleanedContent);
+
+        if (charactersMatcher.find()) {
+            return "Обнаружены недопустимые символы!";
+        }
+
         return "Ошибок не выявлено";
     }
 }
