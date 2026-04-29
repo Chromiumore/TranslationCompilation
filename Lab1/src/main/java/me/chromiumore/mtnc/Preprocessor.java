@@ -27,11 +27,11 @@ public static void main(String[] args) {
 
     private static String cleanContent(String content) {
         // Очистка от комментариев
-        String noBlockComments = content.replaceAll("/\\*[\\s\\S]*?\\*/", "");
-        String noComments = noBlockComments.replaceAll("//.*", "");
+        String noComments = content.replaceAll("//.*", "");
+        String noBlockComments = noComments.replaceAll("/\\*[\\s\\S]*?\\*/", "");
 
         // Удаление лишних пробельных символов
-        String cleaned = noComments
+        String cleaned = noBlockComments
                 .replaceAll("[ \\t]+", " ")
                 .replaceAll("\\r?\\n[ \\t]+", "\n")
                 .replaceAll("[ \\t]+\\r?\\n", "\n")

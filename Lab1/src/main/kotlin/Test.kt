@@ -31,5 +31,5 @@ fun calc(sum: Int): Int {
         root += 1
     }
 
-    return root
+    return           root
 }
