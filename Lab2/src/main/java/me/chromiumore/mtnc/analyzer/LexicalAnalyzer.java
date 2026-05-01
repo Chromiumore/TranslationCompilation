@@ -206,7 +206,7 @@ public class LexicalAnalyzer {
 
     public void printResults() {
         System.out.printf("%-15s | %s%n", "Лексема", "Тип");
-        System.out.println("---------------+------------------------");
+        System.out.println("----------------+-----------------------");
         for (Token token : tokens) {
             System.out.printf("%-15s | %s%n", token.lexeme, token.type);
         }
