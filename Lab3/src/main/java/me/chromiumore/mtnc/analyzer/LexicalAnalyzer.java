@@ -208,4 +208,8 @@ public class LexicalAnalyzer {
     public List<Token> getTokens() {
         return tokens;
     }
+
+    public boolean hasErrors() {
+        return !errors.isEmpty();
+    }
 }

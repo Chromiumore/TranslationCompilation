@@ -26,6 +26,8 @@ public class Main {
 
         analyzer.printResults();
 
+        if (analyzer.hasErrors()) { return; }
+
         Parser parser = new Parser(analyzer.getTokens());
         try {
             Program ast = parser.parse();
