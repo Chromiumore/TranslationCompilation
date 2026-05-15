@@ -1,0 +1,410 @@
+package me.chromiumore.mtnc.analyzer;
+
+import me.chromiumore.mtnc.analyzer.ast.Block;
+import me.chromiumore.mtnc.analyzer.ast.FunctionDecl;
+import me.chromiumore.mtnc.analyzer.ast.Parameter;
+import me.chromiumore.mtnc.analyzer.ast.Program;
+import me.chromiumore.mtnc.analyzer.ast.expression.*;
+import me.chromiumore.mtnc.analyzer.ast.statement.*;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Parser {
+    private final List<Token> tokens;
+    private int pos = 0;
+    private final List<String> errors = new ArrayList<>();
+
+    public Parser(List<Token> tokens) {
+        this.tokens = tokens;
+    }
+
+    private Token peek() {
+        return pos < tokens.size() ? tokens.get(pos) : null;
+    }
+
+    private Token advance() {
+        if (pos >= tokens.size()) throw new ParseException("Unexpected end of input");
+        return tokens.get(pos++);
+    }
+
+    private boolean matchKeyword(String keyword) {
+        Token t = peek();
+        return t != null && t.type == TokenType.KEYWORD && t.lexeme.equals(keyword);
+    }
+
+    private boolean matchDelim(String delim) {
+        Token t = peek();
+        return t != null && t.type == TokenType.DELIMITER && t.lexeme.equals(delim);
+    }
+
+    private boolean matchOp(String op) {
+        Token t = peek();
+        return t != null && t.type == TokenType.OPERATOR && t.lexeme.equals(op);
+    }
+
+    private Token expectKeyword(String keyword) {
+        if (matchKeyword(keyword)) return advance();
+        error("Ожидалось ключевое слово '" + keyword + "'");
+        return null;
+    }
+
+    private Token expectDelim(String delim) {
+        if (matchDelim(delim)) return advance();
+        error("Ожидался разделитель '" + delim + "'");
+        return null;
+    }
+
+    private Token expectIdentifier() {
+        if (peek() != null && peek().type == TokenType.IDENTIFIER) return advance();
+        error("Ожидался идентификатор");
+        return null;
+    }
+
+    private Token expectOp(String op) {
+        if (matchOp(op)) return advance();
+        error("Ожидался оператор '" + op + "'");
+        return null;
+    }
+
+    private void error(String message) {
+        Token tok = peek();
+        String posInfo = tok == null ? "EOF" : String.valueOf(tok.position);
+        String msg = "Синтаксическая ошибка на токене " + posInfo + ": " + message +
+                (tok != null ? " (получено " + tok + ")" : "");
+        errors.add(msg);
+    }
+
+    private void synchronize() {
+        while (peek() != null) {
+            Token t = peek();
+            // остановка на начале оператора, объявления или закрывающей скобке
+            if (t.type == TokenType.KEYWORD &&
+                    (t.lexeme.equals("fun") || t.lexeme.equals("val") || t.lexeme.equals("var") ||
+                            t.lexeme.equals("if") || t.lexeme.equals("for") || t.lexeme.equals("while") ||
+                            t.lexeme.equals("return") || t.lexeme.equals("else"))) return;
+            if (t.type == TokenType.DELIMITER && (t.lexeme.equals("}") || t.lexeme.equals(";"))) return;
+            advance();
+        }
+    }
+
+    public Program parse() {
+        Program program = new Program();
+        while (peek() != null) {
+            if (matchKeyword("fun")) {
+                FunctionDecl f = functionDecl();
+                if (f != null) program.functions.add(f);
+            } else {
+                error("Ожидалось объявление функции");
+                advance();
+                synchronize();
+            }
+        }
+        return program;
+    }
+
+    private FunctionDecl functionDecl() {
+        expectKeyword("fun");
+        Token nameTok = expectIdentifier();
+        if (nameTok == null) return null;
+        String name = nameTok.lexeme;
+
+        expectDelim("(");
+        List<Parameter> params = parameters();
+        expectDelim(")");
+
+        String returnType = null;
+        if (matchDelim(":")) {
+            advance();
+            returnType = parseType();
+        }
+
+        Block body = block();
+        if (body == null) return null;
+
+        FunctionDecl f = new FunctionDecl();
+        f.name = name;
+        f.parameters = params;
+        f.returnType = returnType;
+        f.body = body;
+        return f;
+    }
+
+    private List<Parameter> parameters() {
+        List<Parameter> params = new ArrayList<>();
+        if (peek() != null && peek().type == TokenType.IDENTIFIER) {
+            params.add(parameter());
+            while (matchDelim(",")) {
+                advance();
+                params.add(parameter());
+            }
+        }
+        return params;
+    }
+
+    private Parameter parameter() {
+        Token id = expectIdentifier();
+        expectDelim(":");
+        String type = parseType();
+        return new Parameter(id.lexeme, type);
+    }
+
+    private String parseType() {
+        Token t = peek();
+        if (t != null && (t.type == TokenType.IDENTIFIER || t.type == TokenType.KEYWORD)) {
+            advance();
+            return t.lexeme;
+        }
+        error("Ожидалось имя типа");
+        return "?";
+    }
+
+    private Block block() {
+        expectDelim("{");
+        Block block = new Block();
+        while (peek() != null && !matchDelim("}")) {
+            Statement stmt = statement();
+            if (stmt != null) block.statements.add(stmt);
+            // необязательная точка с запятой после оператора
+            if (matchDelim(";")) {
+                advance();
+            } else if (!matchDelim("}")) {
+                // пропущенная точка с запятой допускается только перед следующим оператором
+                if (!isStartOfStatement()) {
+                    error("Ожидалась ';' или конец блока '}'");
+                    synchronize();
+                    if (matchDelim("}")) break;
+                }
+            }
+        }
+        expectDelim("}");
+        return block;
+    }
+
+    private boolean isStartOfStatement() {
+        Token t = peek();
+        if (t == null) return false;
+        if (t.type == TokenType.KEYWORD) {
+            return t.lexeme.equals("val") || t.lexeme.equals("var") || t.lexeme.equals("if") ||
+                    t.lexeme.equals("for") || t.lexeme.equals("while") || t.lexeme.equals("return");
+        }
+        return t.type == TokenType.IDENTIFIER; // присваивание или выражение-оператор
+    }
+
+    private Statement statement() {
+        Token t = peek();
+        if (t == null) return null;
+        if (t.type == TokenType.KEYWORD) {
+            switch (t.lexeme) {
+                case "val":
+                case "var": return variableDecl();
+                case "if": return ifStatement();
+                case "for": return forStatement();
+                case "while": return whileStatement();
+                case "return": return returnStatement();
+                default:
+                    error("Неожиданное ключевое слово '" + t.lexeme + "' в начале оператора");
+                    advance();
+                    synchronize();
+                    return null;
+            }
+        } else if (t.type == TokenType.IDENTIFIER) {
+            // Предпросмотр для различения присваивания и выражения-оператора
+            if (isNextAssignmentOp()) {
+                return assignment();
+            } else {
+                Expression expr = expression();
+                return new ExpressionStatement(expr);
+            }
+        } else {
+            error("Неожиданный токен " + t + " в начале оператора");
+            advance();
+            synchronize();
+            return null;
+        }
+    }
+
+    private boolean isNextAssignmentOp() {
+        if (pos + 1 < tokens.size()) {
+            Token next = tokens.get(pos + 1);
+            return next.type == TokenType.OPERATOR &&
+                    (next.lexeme.equals("=") || next.lexeme.equals("+="));
+        }
+        return false;
+    }
+
+    private VariableDecl variableDecl() {
+        boolean isVal = matchKeyword("val");
+        Token kw = advance(); // val или var
+        if (isVal != (kw.lexeme.equals("val"))) isVal = kw.lexeme.equals("val");
+
+        Token id = expectIdentifier();
+        String type = null;
+        if (matchDelim(":")) {
+            advance();
+            type = parseType();
+        }
+        expectOp("=");
+        Expression init = expression();
+        return new VariableDecl(isVal, id.lexeme, type, init);
+    }
+
+    private Assignment assignment() {
+        Token id = expectIdentifier();
+        String op;
+        if (matchOp("=")) {
+            advance();
+            op = "=";
+        } else if (matchOp("+=")) {
+            advance();
+            op = "+=";
+        } else {
+            error("Ожидался оператор '=' или '+=' в присваивании");
+            return null;
+        }
+        Expression value = expression();
+        return new Assignment(id.lexeme, op, value);
+    }
+
+    private IfStatement ifStatement() {
+        expectKeyword("if");
+        expectDelim("(");
+        Expression cond = expression();
+        expectDelim(")");
+        Statement thenBr = block();
+        Statement elseBr = null;
+        if (matchKeyword("else")) {
+            advance();
+            if (matchKeyword("if")) {
+                elseBr = ifStatement();
+            } else {
+                elseBr = block();
+            }
+        }
+        return new IfStatement(cond, thenBr, elseBr);
+    }
+
+    private ForStatement forStatement() {
+        expectKeyword("for");
+        expectDelim("(");
+        Token id = expectIdentifier();
+        expectKeyword("in");
+        Expression start = expression();
+        expectOp("..");
+        Expression end = expression();
+        expectDelim(")");
+        Statement body = block();   // тело цикла – блок
+        return new ForStatement(id.lexeme, start, end, body);
+    }
+
+    private WhileStatement whileStatement() {
+        expectKeyword("while");
+        expectDelim("(");
+        Expression cond = expression();
+        expectDelim(")");
+        Statement body = block();   // тело цикла – блок
+        return new WhileStatement(cond, body);
+    }
+
+    private ReturnStatement returnStatement() {
+        expectKeyword("return");
+        Expression expr = null;
+        if (peek() != null && !matchDelim("}") && !matchDelim(";")) {
+            expr = expression();
+        }
+        return new ReturnStatement(expr);
+    }
+
+    private Expression expression() {
+        return expression(0);
+    }
+
+    private Expression expression(int minPrec) {
+        Expression left = primary();
+        while (peek() != null) {
+            Token t = peek();
+            if (t.type == TokenType.OPERATOR && isBinaryOp(t.lexeme)) {
+                int prec = precedence(t.lexeme);
+                if (prec < minPrec) break;
+                advance();
+                Expression right = expression(prec + 1);
+                left = new BinaryExpr(left, t.lexeme, right);
+            } else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    private boolean isBinaryOp(String op) {
+        return op.equals("+") || op.equals("*") || op.equals("%") ||
+                 op.equals("<") || op.equals("==");
+    }
+
+    private int precedence(String op) {
+        switch (op) {
+            case "<": case "==": return 2;
+            case "+": return 3;
+            case "*": case "%": return 4;
+            default: return 0;
+        }
+    }
+
+    private Expression primary() {
+        Token t = peek();
+        if (t == null) {
+            error("Неожиданный конец выражения");
+            throw new ParseException("Unexpected end of expression");
+        }
+        if (t.type == TokenType.CONSTANT_INT) {
+            advance();
+            return new IntLiteral(Integer.parseInt(t.lexeme));
+        } else if (t.type == TokenType.CONSTANT_REAL) {
+            advance();
+            return new RealLiteral(Double.parseDouble(t.lexeme));
+        }
+        else if (t.type == TokenType.CONSTANT_STRING) {
+            advance();
+            String s = t.lexeme;
+            if (s.contains("${")) {
+                return new StringTemplateLiteral(s);
+            } else {
+                return new StringLiteral(s);
+            }
+        } else if (t.type == TokenType.IDENTIFIER) {
+            advance();
+            if (matchDelim("(")) {
+                return finishCall(t.lexeme);
+            } else {
+                return new IdentifierExpr(t.lexeme);
+            }
+        } else if (matchDelim("(")) {
+            advance();
+            Expression expr = expression();
+            expectDelim(")");
+            return expr;
+        } else {
+            error("Ожидалось выражение, получено " + t);
+            advance();
+            synchronize();
+            return new IntLiteral(0); // заглушка
+        }
+    }
+
+    private FunctionCall finishCall(String name) {
+        expectDelim("(");
+        FunctionCall call = new FunctionCall(name);
+        if (!matchDelim(")")) {
+            call.arguments.add(expression());
+            while (matchDelim(",")) {
+                advance();
+                call.arguments.add(expression());
+            }
+        }
+        expectDelim(")");
+        return call;
+    }
+
+    public List<String> getErrors() { return errors; }
+    public boolean hasErrors() { return !errors.isEmpty(); }
+}
