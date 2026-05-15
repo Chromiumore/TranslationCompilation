@@ -146,7 +146,7 @@ public class Parser {
         Token id = expectIdentifier();
         expectDelim(":");
         String type = parseType();
-        return new Parameter(id.lexeme, type);
+        return new Parameter(id != null ? id.lexeme : null, type);
     }
 
     private String parseType() {

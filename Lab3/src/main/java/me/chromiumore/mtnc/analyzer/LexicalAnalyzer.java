@@ -15,7 +15,7 @@ public class LexicalAnalyzer {
     );
 
     private static final Set<Character> DELIMITERS = Set.of(
-            '(', ')', '{', '}', ';', ':'
+            '(', ')', '{', '}', ';', ':', ','
     );
 
     private final String input;
