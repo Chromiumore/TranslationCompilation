@@ -8,6 +8,8 @@ import me.chromiumore.mtnc.analyzer.ast.Program;
 import me.chromiumore.mtnc.preprocessor.PreprocessResult;
 import me.chromiumore.mtnc.preprocessor.Preprocessor;
 import me.chromiumore.mtnc.preprocessor.ValidationResult;
+import me.chromiumore.mtnc.semantic.SemanticAnalyzer;
+import me.chromiumore.mtnc.semantic.Triad;
 
 public class Main {
     public static void main(String[] args) {
@@ -40,6 +42,24 @@ public class Main {
                 System.out.println("AST:");
                 AstPrinter.print(ast);
                 System.out.println("Синтаксический анализ завершён успешно. Ошибок не найдено.");
+            }
+
+            if (parser.hasErrors()) return;
+
+            SemanticAnalyzer sem = new SemanticAnalyzer(ast);
+            sem.analyze();
+            if (sem.getErrors().isEmpty()) {
+                System.out.println("Семантический анализ завершён успешно. Ошибок не найдено.");
+                sem.printSymbolTable();
+                // Печать триад
+                int i = 1;
+                for (Triad t : sem.getTriads()) {
+                    System.out.println(i++ + ") " + t);
+                }
+            } else {
+                for (String err : sem.getErrors()) {
+                    System.out.println("Ошибка: " + err);
+                }
             }
         } catch (ParseException e) {
             System.out.println("Критическая ошибка разбора: " + e.getMessage());

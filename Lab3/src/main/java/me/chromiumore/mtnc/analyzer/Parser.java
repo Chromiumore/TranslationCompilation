@@ -1,9 +1,6 @@
 package me.chromiumore.mtnc.analyzer;
 
-import me.chromiumore.mtnc.analyzer.ast.Block;
-import me.chromiumore.mtnc.analyzer.ast.FunctionDecl;
-import me.chromiumore.mtnc.analyzer.ast.Parameter;
-import me.chromiumore.mtnc.analyzer.ast.Program;
+import me.chromiumore.mtnc.analyzer.ast.*;
 import me.chromiumore.mtnc.analyzer.ast.expression.*;
 import me.chromiumore.mtnc.analyzer.ast.statement.*;
 
@@ -14,6 +11,7 @@ public class Parser {
     private int pos = 0;
     private final List<String> errors = new ArrayList<>();
     private Deque<Set<String>> scopes = new ArrayDeque<>();
+    private Set<String> importedFunctions = new HashSet<>(Arrays.asList(new String[]{"print", "println"}));
 
     public Parser(List<Token> tokens) {
         this.tokens = tokens;
@@ -124,7 +122,63 @@ public class Parser {
                 synchronize();
             }
         }
+
+        validate(program);
         return program;
+    }
+
+    private void validate(Program program) {
+        Set<String> declaredFunctions = importedFunctions;
+        for (FunctionDecl f : program.functions) {
+            if (f.name != null) declaredFunctions.add(f.name);
+        }
+
+        validateNode(program, declaredFunctions);
+    }
+
+    private void validateNode(ASTNode node, Set<String> declaredFunctions) {
+        if (node == null) return;
+        if (node instanceof Program) {
+            for (FunctionDecl f : ((Program) node).functions) {
+                validateNode(f, declaredFunctions);
+            }
+        } else if (node instanceof FunctionDecl) {
+            validateNode(((FunctionDecl) node).body, declaredFunctions);
+        } else if (node instanceof Block) {
+            for (Statement stmt : ((Block) node).statements) {
+                validateNode(stmt, declaredFunctions);
+            }
+        } else if (node instanceof IfStatement) {
+            IfStatement ifStmt = (IfStatement) node;
+            validateNode(ifStmt.condition, declaredFunctions);
+            validateNode(ifStmt.thenBranch, declaredFunctions);
+            validateNode(ifStmt.elseBranch, declaredFunctions);
+        } else if (node instanceof ForStatement) {
+            ForStatement forStmt = (ForStatement) node;
+            validateNode(forStmt.rangeStart, declaredFunctions);
+            validateNode(forStmt.rangeEnd, declaredFunctions);
+            validateNode(forStmt.body, declaredFunctions);
+        } else if (node instanceof WhileStatement) {
+            WhileStatement whileStmt = (WhileStatement) node;
+            validateNode(whileStmt.condition, declaredFunctions);
+            validateNode(whileStmt.body, declaredFunctions);
+        } else if (node instanceof ReturnStatement) {
+            validateNode(((ReturnStatement) node).value, declaredFunctions);
+        } else if (node instanceof ExpressionStatement) {
+            validateNode(((ExpressionStatement) node).expr, declaredFunctions);
+        } else if (node instanceof FunctionCall) {
+            FunctionCall call = (FunctionCall) node;
+            if (!declaredFunctions.contains(call.functionName)) {
+                errors.add("Синтаксическая ошибка: вызов необъявленной функции '" + call.functionName + "'");
+            }
+            for (Expression arg : call.arguments) {
+                validateNode(arg, declaredFunctions);
+            }
+        } else if (node instanceof BinaryExpr) {
+            BinaryExpr bin = (BinaryExpr) node;
+            validateNode(bin.left, declaredFunctions);
+            validateNode(bin.right, declaredFunctions);
+        }
     }
 
     private FunctionDecl functionDecl() {
