@@ -289,13 +289,13 @@ public class SemanticAnalyzer {
         triads.add(new Triad("JMP", "L_end", ""));
         int jmpEndIdx = triads.size() - 1;
         // else
-        int elseLabel = triads.size();
+        int elseLabel = triads.size() + 1;
         triads.get(jzIndex).arg2 = "L" + elseLabel;
         if (stmt.elseBranch != null) {
             if (stmt.elseBranch instanceof Block) analyzeBlock((Block)stmt.elseBranch);
             else analyzeStatement(stmt.elseBranch);
         }
-        int endLabel = triads.size();
+        int endLabel = triads.size() + 1;
         triads.get(jmpEndIdx).arg2 = "L" + endLabel;
     }
 
@@ -328,15 +328,15 @@ public class SemanticAnalyzer {
         triads.add(new Triad("+", stmt.loopVariable, "1"));
         int incTriad = triads.size() - 1;
         triads.add(new Triad(":=", stmt.loopVariable, "^" + (incTriad + 1)));
-        triads.add(new Triad("JMP", "L" + loopStart, ""));
+        triads.add(new Triad("JMP", "L" + (loopStart + 1), ""));
 
-        int exitLabel = triads.size();
+        int exitLabel = triads.size() + 1;
         triads.get(jzIdx).arg2 = "L" + exitLabel;
         exitScope();
     }
 
     private void analyzeWhile(WhileStatement stmt) {
-        int loopStart = triads.size();
+        int loopStart = triads.size() + 1;
         String condType = analyzeExpression(stmt.condition);
         if (!condType.equals("Int")) {
             errors.add("Условие while должно быть типа Int.");
@@ -346,7 +346,7 @@ public class SemanticAnalyzer {
         int jzIdx = triads.size() - 1;
         analyzeStatement(stmt.body);   // блок
         triads.add(new Triad("JMP", "L" + loopStart, ""));
-        int exitLabel = triads.size();
+        int exitLabel = triads.size() + 1;
         triads.get(jzIdx).arg2 = "L" + exitLabel;
     }
 
