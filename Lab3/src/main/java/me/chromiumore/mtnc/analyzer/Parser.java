@@ -7,13 +7,13 @@ import me.chromiumore.mtnc.analyzer.ast.Program;
 import me.chromiumore.mtnc.analyzer.ast.expression.*;
 import me.chromiumore.mtnc.analyzer.ast.statement.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class Parser {
     private final List<Token> tokens;
     private int pos = 0;
     private final List<String> errors = new ArrayList<>();
+    private Deque<Set<String>> scopes = new ArrayDeque<>();
 
     public Parser(List<Token> tokens) {
         this.tokens = tokens;
@@ -67,6 +67,30 @@ public class Parser {
         return null;
     }
 
+    private void enterScope() {
+        scopes.push(new HashSet<>());
+    }
+
+    private void exitScope() {
+        if (!scopes.isEmpty()) scopes.pop();
+    }
+
+    private void declare(String name) {
+        if (!scopes.isEmpty()) {
+             if (scopes.peek().contains(name)) {
+                 error("Попытка объявления переменной/функции, которая уже была объявлена ранее: " + name);
+             }
+            scopes.peek().add(name);
+        }
+    }
+
+    private boolean isDeclared(String name) {
+        for (Set<String> scope : scopes) {
+            if (scope.contains(name)) return true;
+        }
+        return false;
+    }
+
     private void error(String message) {
         Token tok = peek();
         String posInfo = tok == null ? "EOF" : String.valueOf(tok.position);
@@ -104,9 +128,16 @@ public class Parser {
     }
 
     private FunctionDecl functionDecl() {
+        Deque<Set<String>> savedScopes = scopes;
+        scopes = new ArrayDeque<>();
+        enterScope();
+
         expectKeyword("fun");
         Token nameTok = expectIdentifier();
-        if (nameTok == null) return null;
+        if (nameTok == null) {
+            scopes = savedScopes;
+            return null;
+        }
         String name = nameTok.lexeme;
 
         expectDelim("(");
@@ -127,6 +158,8 @@ public class Parser {
         f.parameters = params;
         f.returnType = returnType;
         f.body = body;
+
+        scopes = savedScopes;
         return f;
     }
 
@@ -146,6 +179,7 @@ public class Parser {
         Token id = expectIdentifier();
         expectDelim(":");
         String type = parseType();
+        declare(id.lexeme);
         return new Parameter(id != null ? id.lexeme : null, type);
     }
 
@@ -161,6 +195,7 @@ public class Parser {
 
     private Block block() {
         expectDelim("{");
+        enterScope();
         Block block = new Block();
         while (peek() != null && !matchDelim("}")) {
             Statement stmt = statement();
@@ -178,6 +213,7 @@ public class Parser {
             }
         }
         expectDelim("}");
+        exitScope();
         return block;
     }
 
@@ -246,11 +282,17 @@ public class Parser {
         }
         expectOp("=");
         Expression init = expression();
+        declare(id.lexeme);
         return new VariableDecl(isVal, id.lexeme, type, init);
     }
 
     private Assignment assignment() {
         Token id = expectIdentifier();
+        String varName = id.lexeme;
+        // Проверка существования переменной
+        if (!isDeclared(varName)) {
+            error("Необъявленная переменная: " + varName);
+        }
         String op;
         if (matchOp("=")) {
             advance();
@@ -288,13 +330,19 @@ public class Parser {
         expectKeyword("for");
         expectDelim("(");
         Token id = expectIdentifier();
+        String loopVar = id.lexeme;
         expectKeyword("in");
         Expression start = expression();
         expectOp("..");
         Expression end = expression();
         expectDelim(")");
+
+        enterScope();
+        declare(loopVar);
         Statement body = block();   // тело цикла – блок
-        return new ForStatement(id.lexeme, start, end, body);
+        exitScope();
+
+        return new ForStatement(loopVar, start, end, body);
     }
 
     private WhileStatement whileStatement() {
@@ -376,6 +424,9 @@ public class Parser {
             if (matchDelim("(")) {
                 return finishCall(t.lexeme);
             } else {
+                if (!isDeclared(t.lexeme)) {
+                    error("Необъявленная переменная: " + t.lexeme);
+                }
                 return new IdentifierExpr(t.lexeme);
             }
         } else if (matchDelim("(")) {

@@ -12,7 +12,7 @@ import me.chromiumore.mtnc.preprocessor.ValidationResult;
 public class Main {
     public static void main(String[] args) {
         if (args.length < 1) {
-            throw new RuntimeException("Usage: java Preprocessor <inputFile>");
+            throw new RuntimeException("Usage: java Main <inputFile>");
         }
 
         PreprocessResult preprocessResult = Preprocessor.preprocessFile(args[0]);
