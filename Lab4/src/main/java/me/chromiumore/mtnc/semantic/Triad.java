@@ -3,7 +3,7 @@ package me.chromiumore.mtnc.semantic;
 // Триада
 public class Triad {
     String op;
-    String arg1, arg2; // строки; для ссылок на другие триады храним "^N"
+    String arg1, arg2;
 
     Triad(String op, String arg1, String arg2) {
         this.op = op;

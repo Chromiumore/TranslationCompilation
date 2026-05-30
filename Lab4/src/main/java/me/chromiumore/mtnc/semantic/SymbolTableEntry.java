@@ -1,6 +1,6 @@
 package me.chromiumore.mtnc.semantic;
 
-// Для красивого вывода таблицы
+// Для вывода таблицы
 class SymbolTableEntry {
     String name;
     String type;

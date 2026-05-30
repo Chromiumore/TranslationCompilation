@@ -8,7 +8,7 @@ import java.util.List;
 class FunctionInfo {
     String name;
     List<Parameter> params;
-    String returnType;   // null для Unit
+    String returnType;
 
     FunctionInfo(String name, List<Parameter> params, String returnType) {
         this.name = name;

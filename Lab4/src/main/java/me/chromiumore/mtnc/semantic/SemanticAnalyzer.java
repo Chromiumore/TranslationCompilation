@@ -44,14 +44,13 @@ public class SemanticAnalyzer {
     }
 
     private void enterScope() {
-        enterScope(null);   // имя не меняется, только новая пустая область
+        enterScope(null);
     }
 
     private void exitScope() {
         if (!symbolTable.isEmpty()) {
             symbolTable.pop();
             scopeCounter--;
-            // Восстанавливаем имя области (упрощённо: при выходе из блока имя сбрасываем)
             if (symbolTable.isEmpty()) {
                 currentScopeName = "global";
             } else {
@@ -92,14 +91,12 @@ public class SemanticAnalyzer {
         return true;
     }
 
-    // Упрощённый вызов (initialized = false)
     private boolean addSymbol(String name, String type, boolean isVal) {
         return addSymbol(name, type, isVal, false);
     }
 
     // ---------- Главный метод анализа ----------
     public void analyze() {
-        // Регистрируем функции (включая встроенные)
         for (FunctionDecl f : ast.functions) {
             if (functionTable.containsKey(f.name)) {
                 errors.add("Повторное объявление функции '" + f.name + "'.");
@@ -111,7 +108,6 @@ public class SemanticAnalyzer {
         functionTable.put("println", new FunctionInfo("println",
                 Collections.singletonList(new Parameter("arg", "String")), null));
 
-        // Анализируем каждую функцию
         for (FunctionDecl f : ast.functions) {
             analyzeFunction(f);
         }
@@ -119,9 +115,7 @@ public class SemanticAnalyzer {
 
     private void analyzeFunction(FunctionDecl func) {
         currentFunction = functionTable.get(func.name);
-        // Новая область для параметров и тела
-        enterScope(func.name);              // например, "main"
-        // Параметры добавляются в эту область
+        enterScope(func.name);
         for (Parameter p : func.parameters) {
             addSymbol(p.name, p.type, true, true);   // инициализированы
         }
@@ -129,13 +123,12 @@ public class SemanticAnalyzer {
         if (func.body != null) {
             analyzeBlock(func.body);
         }
-        exitScope();   // покидаем функцию
+        exitScope();
         currentFunction = null;
     }
 
     private void analyzeBlock(Block block) {
         if (block == null) return;
-        // Создаём вложенную область для блока
         String parentScope = currentScopeName;
         enterScope(parentScope + ".block");   // "main.block"
         for (Statement stmt : block.statements) {
@@ -161,7 +154,6 @@ public class SemanticAnalyzer {
         } else if (stmt instanceof ExpressionStatement) {
             analyzeExpression(((ExpressionStatement) stmt).expr);
         } else if (stmt instanceof Block) {
-            // вложенный блок (хотя в грамматике такого нет, но для безопасности)
             analyzeBlock((Block) stmt);
         }
     }
@@ -169,8 +161,7 @@ public class SemanticAnalyzer {
     private void analyzeVariableDecl(VariableDecl decl) {
         String varType = decl.type;
         if (decl.initializer != null) {
-            // ... существующая логика: вычисление типа, проверка соответствия ...
-            addSymbol(decl.name, varType, decl.isVal, true);   // инициализирована
+            addSymbol(decl.name, varType, decl.isVal, true);
             int initTriadIdx = triads.size() - 1;
             triads.add(new Triad(":=", decl.name, "^" + (initTriadIdx + 1)));
         } else {
@@ -183,28 +174,21 @@ public class SemanticAnalyzer {
                 errors.add("Неизменяемая переменная '" + decl.name + "' должна быть инициализирована при объявлении.");
                 return;
             }
-            // var x: Int;   – не инициализирована
             addSymbol(decl.name, varType, false, false);
-            // триады присваивания нет
         }
     }
 
     private void analyzeAssignment(Assignment assign) {
         SymbolInfo var = lookup(assign.variableName);
-        // ... проверки существования, неизменяемости ...
         if (assign.operator.equals("+=")) {
-            // ... проверка типа Int ...
             if (!var.initialized) {
                 errors.add("Переменная '" + assign.variableName + "' не инициализирована перед использованием в +=.");
                 return;
             }
         } else {
-            // Обычное присваивание – переменная становится инициализированной
             if (!var.isVal) {
                 markInitialized(var);
             } else {
-                // val – это разрешённая инициализация при объявлении, но если она здесь – это уже повтор?
-                // (поскольку val без инициализатора запрещена, сюда мы не попадём)
                 markInitialized(var);
             }
         }
@@ -314,24 +298,20 @@ public class SemanticAnalyzer {
         if (!endType.equals("Int")) errors.add("Конец диапазона for должен быть Int.");
         int endTriad = triads.size() - 1;
 
-        // Создаём область для переменной цикла
         enterScope(currentScopeName + ".for");
         addSymbol(stmt.loopVariable, "Int", true, true);
 
-        // i = start
         triads.add(new Triad(":=", stmt.loopVariable, "^" + (startTriad + 1)));
 
         int loopStart = triads.size();
-        // условие i <= end
         triads.add(new Triad("<=", stmt.loopVariable, "^" + (endTriad + 1)));
         int condTriad = triads.size() - 1;
         triads.add(new Triad("JZ", "^" + (condTriad + 1), "L_exit"));
         int jzIdx = triads.size() - 1;
 
         // тело
-        analyzeStatement(stmt.body);   // обычно это блок
+        analyzeStatement(stmt.body);
 
-        // i = i + 1
         triads.add(new Triad("+", stmt.loopVariable, "1"));
         int incTriad = triads.size() - 1;
         triads.add(new Triad(":=", stmt.loopVariable, "^" + (incTriad + 1)));
