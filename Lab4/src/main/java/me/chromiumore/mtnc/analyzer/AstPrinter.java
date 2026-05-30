@@ -49,8 +49,11 @@ public class AstPrinter {
         if (node instanceof Block) return "block";
         if (node instanceof VariableDecl) {
             VariableDecl v = (VariableDecl) node;
-            return (v.isVal ? "val " : "var ") + v.name +
-                    (v.type != null ? ": " + v.type : "") + " =";
+            String desc = (v.isVal ? "val " : "var ") + v.name +
+                    (v.type != null ? ": " + v.type : "");
+            if (v.initializer != null) desc += " =";
+            // если инициализатора нет, то без "="
+            return desc;
         }
         if (node instanceof Assignment) {
             Assignment a = (Assignment) node;
@@ -92,8 +95,9 @@ public class AstPrinter {
         } else if (node instanceof Block) {
             list.addAll(((Block) node).statements);
         } else if (node instanceof VariableDecl) {
-            if (((VariableDecl) node).initializer != null)
-                list.add(((VariableDecl) node).initializer);
+            VariableDecl v = (VariableDecl) node;
+            if (v.initializer != null)
+                list.add(v.initializer);
         } else if (node instanceof Assignment) {
             if (((Assignment) node).value != null)
                 list.add(((Assignment) node).value);

@@ -334,8 +334,15 @@ public class Parser {
             advance();
             type = parseType();
         }
-        expectOp("=");
-        Expression init = expression();
+        Expression init = null;
+        if (matchOp("=")) {
+            advance();
+            init = expression();
+        } else if (type == null) {
+            // Если тип не указан, инициализатор обязателен для вывода типа
+            error("Объявление переменной без типа требует инициализатор ' = <выражение>'");
+        }
+
         declare(id.lexeme);
         return new VariableDecl(isVal, id.lexeme, type, init);
     }
