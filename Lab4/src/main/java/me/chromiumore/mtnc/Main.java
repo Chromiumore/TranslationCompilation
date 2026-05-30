@@ -43,6 +43,24 @@ public class Main {
                 AstPrinter.print(ast);
                 System.out.println("Синтаксический анализ завершён успешно. Ошибок не найдено.");
             }
+
+            if (parser.hasErrors()) return;
+
+            SemanticAnalyzer sem = new SemanticAnalyzer(ast);
+            sem.analyze();
+            if (sem.getErrors().isEmpty()) {
+                System.out.println("Семантический анализ завершён успешно. Ошибок не найдено.");
+                sem.printSymbolTable();
+                // Печать триад
+                int i = 1;
+                for (Triad t : sem.getTriads()) {
+                    System.out.println(i++ + ") " + t);
+                }
+            } else {
+                for (String err : sem.getErrors()) {
+                    System.out.println("Ошибка: " + err);
+                }
+            }
         } catch (ParseException e) {
             System.out.println("Критическая ошибка разбора: " + e.getMessage());
         }
