@@ -6,13 +6,15 @@ class SymbolInfo {
     String type;
     boolean isVal;
     boolean initialized;
-    int scopeLevel;   // для отладки, можно не использовать
+    int scopeLevel;
+    SymbolTableEntry tableEntry;
 
-    SymbolInfo(String name, String type, boolean isVal, int scopeLevel) {
+    SymbolInfo(String name, String type, boolean isVal, int scopeLevel, SymbolTableEntry entry) {
         this.name = name;
         this.type = type;
         this.isVal = isVal;
         this.initialized = false;
         this.scopeLevel = scopeLevel;
+        this.tableEntry = entry;
     }
 }

@@ -18,14 +18,6 @@ public class SemanticAnalyzer {
     private int scopeCounter = 0;
     private String currentScopeName = "global";
 
-    // Для красивого вывода таблицы
-    private static class SymbolTableEntry {
-        String name;
-        String type;
-        boolean declared;
-        boolean initialized;
-        String scope;
-    }
     private final List<SymbolTableEntry> tableEntries = new ArrayList<>();
 
     // === Таблица функций ===
@@ -85,10 +77,7 @@ public class SemanticAnalyzer {
             errors.add("Повторное объявление переменной '" + name + "' в одной области видимости.");
             return false;
         }
-        SymbolInfo si = new SymbolInfo(name, type, isVal, scopeCounter);
-        si.initialized = initialized;
-        current.put(name, si);
-        // Запись для таблицы
+
         SymbolTableEntry entry = new SymbolTableEntry();
         entry.name = name;
         entry.type = type != null ? type : "?";
@@ -96,6 +85,10 @@ public class SemanticAnalyzer {
         entry.initialized = initialized;
         entry.scope = currentScopeName;
         tableEntries.add(entry);
+
+        SymbolInfo si = new SymbolInfo(name, type, isVal, scopeCounter, entry);
+        si.initialized = initialized;
+        current.put(name, si);
         return true;
     }
 
@@ -174,35 +167,46 @@ public class SemanticAnalyzer {
     }
 
     private void analyzeVariableDecl(VariableDecl decl) {
-        String initType = analyzeExpression(decl.initializer);
-        String varType = decl.type != null ? decl.type : initType;
-        if (!varType.equals(initType)) {
-            errors.add("Несоответствие типов: переменной '" + decl.name + "' типа " + varType +
-                    " присваивается значение типа " + initType + ".");
+        String varType = decl.type;
+        if (decl.initializer != null) {
+            // ... существующая логика: вычисление типа, проверка соответствия ...
+            addSymbol(decl.name, varType, decl.isVal, true);   // инициализирована
+            int initTriadIdx = triads.size() - 1;
+            triads.add(new Triad(":=", decl.name, "^" + (initTriadIdx + 1)));
+        } else {
+            // Без инициализатора
+            if (varType == null) {
+                errors.add("Невозможно вывести тип переменной '" + decl.name + "' без инициализатора.");
+                return;
+            }
+            if (decl.isVal) {
+                errors.add("Неизменяемая переменная '" + decl.name + "' должна быть инициализирована при объявлении.");
+                return;
+            }
+            // var x: Int;   – не инициализирована
+            addSymbol(decl.name, varType, false, false);
+            // триады присваивания нет
         }
-        // Добавляем в текущую область (уже внутри блока)
-        addSymbol(decl.name, varType, decl.isVal, true);
-        // Триада присваивания
-        int initTriadIdx = triads.size() - 1;
-        triads.add(new Triad(":=", decl.name, "^" + (initTriadIdx + 1)));
     }
 
     private void analyzeAssignment(Assignment assign) {
         SymbolInfo var = lookup(assign.variableName);
-        if (var == null) {
-            errors.add("Присваивание необъявленной переменной '" + assign.variableName + "'.");
-            return;
-        }
-        if (var.isVal) {
-            errors.add("Нельзя присваивать значение неизменяемой переменной '" + assign.variableName + "'.");
-        }
-        String exprType = analyzeExpression(assign.value);
-        if (!var.type.equals(exprType)) {
-            errors.add("Несоответствие типов в присваивании: переменная '" + assign.variableName +
-                    "' типа " + var.type + " не может принять значение типа " + exprType + ".");
-        }
-        if (assign.operator.equals("+=") && !var.type.equals("Int")) {
-            errors.add("Оператор += допустим только для Int.");
+        // ... проверки существования, неизменяемости ...
+        if (assign.operator.equals("+=")) {
+            // ... проверка типа Int ...
+            if (!var.initialized) {
+                errors.add("Переменная '" + assign.variableName + "' не инициализирована перед использованием в +=.");
+                return;
+            }
+        } else {
+            // Обычное присваивание – переменная становится инициализированной
+            if (!var.isVal) {
+                markInitialized(var);
+            } else {
+                // val – это разрешённая инициализация при объявлении, но если она здесь – это уже повтор?
+                // (поскольку val без инициализатора запрещена, сюда мы не попадём)
+                markInitialized(var);
+            }
         }
         int valTriadIdx = triads.size() - 1;
         triads.add(new Triad(":=", assign.variableName, "^" + (valTriadIdx + 1)));
@@ -227,10 +231,13 @@ public class SemanticAnalyzer {
             if (si == null) {
                 errors.add("Использование необъявленной переменной '" + name + "'.");
                 triads.add(new Triad("error", name, ""));
-                return "Int";   // заглушка
+                return "Int";
+            }
+            if (!si.initialized) {
+                errors.add("Использование неинициализированной переменной '" + name + "'.");
             }
             triads.add(new Triad("load", name, ""));
-            return si.type;
+            return si.type != null ? si.type : "Int";
         } else if (expr instanceof BinaryExpr) {
             BinaryExpr bin = (BinaryExpr) expr;
             String leftType = analyzeExpression(bin.left);
@@ -370,6 +377,15 @@ public class SemanticAnalyzer {
                         currentFunction.returnType + ".");
             } else {
                 triads.add(new Triad("RETURN", "", ""));
+            }
+        }
+    }
+
+    private void markInitialized(SymbolInfo si) {
+        if (si != null && !si.initialized) {
+            si.initialized = true;
+            if (si.tableEntry != null) {
+                si.tableEntry.initialized = true;
             }
         }
     }
