@@ -161,6 +161,15 @@ public class SemanticAnalyzer {
     private void analyzeVariableDecl(VariableDecl decl) {
         String varType = decl.type;
         if (decl.initializer != null) {
+            String initType = analyzeExpression(decl.initializer);
+            if (varType == null) {
+                varType = initType;
+            }
+            if (!varType.equals(initType)) {
+                errors.add("Несоответствие типов: переменной '" + decl.name +
+                        "' типа " + varType +
+                        " присваивается значение типа " + initType + ".");
+            }
             addSymbol(decl.name, varType, decl.isVal, true);
             int initTriadIdx = triads.size() - 1;
             triads.add(new Triad(":=", decl.name, "^" + (initTriadIdx + 1)));
@@ -180,20 +189,56 @@ public class SemanticAnalyzer {
 
     private void analyzeAssignment(Assignment assign) {
         SymbolInfo var = lookup(assign.variableName);
+        if (var == null) {
+            errors.add("Присваивание необъявленной переменной '" + assign.variableName + "'.");
+            return;
+        }
+        if (var.isVal) {
+            errors.add("Нельзя присваивать значение неизменяемой переменной '" + assign.variableName + "'.");
+            return;
+        }
+
         if (assign.operator.equals("+=")) {
-            if (!var.initialized) {
-                errors.add("Переменная '" + assign.variableName + "' не инициализирована перед использованием в +=.");
+            // Проверка, что переменная типа Int
+            if (!var.type.equals("Int")) {
+                errors.add("Оператор += допустим только для Int.");
                 return;
             }
-        } else {
-            if (!var.isVal) {
-                markInitialized(var);
-            } else {
-                markInitialized(var);
+            // Переменная должна быть инициализирована перед +=
+            if (!var.initialized) {
+                errors.add("Переменная '" + assign.variableName + "' не инициализирована перед +=.");
+                return;
             }
+            // Генерация триад: загружаем текущее значение переменной
+            triads.add(new Triad("load", assign.variableName, ""));
+            int loadTriadIdx = triads.size() - 1;
+
+            // Анализируем правую часть
+            String exprType = analyzeExpression(assign.value);
+            if (!exprType.equals("Int")) {
+                errors.add("Правая часть += должна быть Int, получено " + exprType);
+            }
+            int rightTriadIdx = triads.size() - 1;
+
+            // Суммируем
+            triads.add(new Triad("+", "^" + (loadTriadIdx + 1), "^" + (rightTriadIdx + 1)));
+            int sumTriadIdx = triads.size() - 1;
+
+            // Присваиваем результат обратно переменной
+            triads.add(new Triad(":=", assign.variableName, "^" + (sumTriadIdx + 1)));
+
+            // Переменная остаётся инициализированной (она уже была)
+        } else { // обычное присваивание "="
+            String exprType = analyzeExpression(assign.value);
+            if (!var.type.equals(exprType)) {
+                errors.add("Несоответствие типов в присваивании: переменная '" + assign.variableName +
+                        "' типа " + var.type + " не может принять значение типа " + exprType + ".");
+            }
+            int valTriadIdx = triads.size() - 1;
+            triads.add(new Triad(":=", assign.variableName, "^" + (valTriadIdx + 1)));
+            // Переменная становится инициализированной (если не была)
+            markInitialized(var);
         }
-        int valTriadIdx = triads.size() - 1;
-        triads.add(new Triad(":=", assign.variableName, "^" + (valTriadIdx + 1)));
     }
 
     private String analyzeExpression(Expression expr) {
@@ -226,12 +271,23 @@ public class SemanticAnalyzer {
             BinaryExpr bin = (BinaryExpr) expr;
             String leftType = analyzeExpression(bin.left);
             String rightType = analyzeExpression(bin.right);
+
+            // Защита от null
+            if (leftType == null) leftType = "?";
+            if (rightType == null) rightType = "?";
+
             if (!leftType.equals("Int") || !rightType.equals("Int")) {
-                errors.add("Бинарная операция '" + bin.operator + "' требует операндов типа Int.");
+                errors.add("Бинарная операция '" + bin.operator + "' требует операндов типа Int, " +
+                        "получены: " + leftType + " и " + rightType + ".");
             }
+
             int leftTriad = triads.size() - 2;
             int rightTriad = triads.size() - 1;
             triads.add(new Triad(bin.operator, "^" + (leftTriad + 1), "^" + (rightTriad + 1)));
+
+            if (!leftType.equals("Int") || !rightType.equals("Int")) {
+                return "error";
+            }
             return "Int";
         } else if (expr instanceof FunctionCall) {
             FunctionCall call = (FunctionCall) expr;
@@ -247,9 +303,11 @@ public class SemanticAnalyzer {
             } else {
                 for (int i = 0; i < call.arguments.size(); i++) {
                     String argType = analyzeExpression(call.arguments.get(i));
+                    if (argType == null) argType = "?";
                     if (!argType.equals(func.params.get(i).type)) {
-                        errors.add("Несоответствие типа аргумента " + (i+1) + " при вызове '" +
-                                call.functionName + "': ожидается " + func.params.get(i).type +
+                        errors.add("Несоответствие типа аргумента " + (i+1) +
+                                " при вызове '" + call.functionName +
+                                "': ожидается " + func.params.get(i).type +
                                 ", получено " + argType + ".");
                     }
                 }
